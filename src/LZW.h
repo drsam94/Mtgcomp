@@ -9,7 +9,8 @@ namespace Compress {
 
     template<typename numeric_t, size_t AlphabetSize>
     std::vector<numeric_t> compress(const std::string &s,
-            const std::array<char, AlphabetSize> &alphabet, size_t &numBits) {
+            const std::array<char, AlphabetSize> &alphabet, size_t &numBits)
+    {
         Trie<numeric_t, AlphabetSize> trie(alphabet);
         numeric_t maxCode = 0;
         std::string oneChar(" ");

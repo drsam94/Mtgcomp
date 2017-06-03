@@ -16,15 +16,9 @@ class Trie {
       public:
         explicit Node(numeric_t v) : value(v) { }
         Node() = default;
-        void addChild(size_t index, numeric_t val) {
-            children[index].reset(new Node(val));
-        }
-        Node *getChild(size_t index) {
-            return children[index].get();
-        }
-        const numeric_t getValue() const {
-            return value;
-        }
+        void addChild(size_t index, numeric_t val) { children[index].reset(new Node(val)); }
+        Node *getChild(size_t index) { return children[index].get(); }
+        const numeric_t getValue() const { return value; }
     };
 
     Node root;
@@ -37,8 +31,9 @@ class Trie {
             alphabetIndex[c] = val++;
         }
     }
-    Trie(const Trie &) = delete;
-    Trie(const Trie &&) = delete;
+    Trie(Trie &) = delete;
+    Trie(Trie &&) = delete;
+    Trie &operator=(Trie &) = delete;
     Trie() = delete;
 
     std::pair<size_t, numeric_t> longestPrefix(const std::string_view &s)

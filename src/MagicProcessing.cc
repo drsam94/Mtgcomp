@@ -1,10 +1,13 @@
+#include "LZW.h"
 #include "MagicProcessing.h"
+#include "util.h"
 #include <stdio.h>
 #include <algorithm>
 using namespace std;
 using json = nlohmann::json;
 
-string MTG::preprocess(const string &s) {
+string MTG::preprocess(const string &s)
+{
     string ret;
     ret.reserve(s.size());
     vector<char> unicodeStack;
@@ -46,10 +49,9 @@ string MTG::preprocess(const string &s) {
     return ret;
 }
 
-// Process a JSOON file and get the data on how well it compressed
-vector<tuple<size_t, size_t, const json *>>
-MTG::processData(const json &allSets, bool oracle) {
-    vector<tuple<size_t, size_t, const json *>> data;
+MTG::DataVec MTG::processData(const json &allSets, bool oracle, char color)
+{
+    MTG::DataVec data;
     for (auto it = allSets.begin(); it != allSets.end(); ++it) {
         const json &set = it.value();
         if (set["type"] != "core" && set["type"] != "expansion") continue;
@@ -57,6 +59,19 @@ MTG::processData(const json &allSets, bool oracle) {
         for (const json &card : set["cards"]) {
             // Vanilla creatures don't have text!
             if (auto it = card.find(oracle ? "text" : "originalText"); it != card.end()) {
+                // Restrict to the chosen color is one is provided
+                if (color != '\0') {
+                    if (auto cit = card.find("colorIdentity"); cit != card.end()) {
+                        const json &colorIdent = cit.value();
+                        string oneChar;
+                        oneChar.push_back(color);
+                        if (find(begin(colorIdent), end(colorIdent), oneChar) == end(colorIdent)) {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
                 corpus += MTG::preprocess(it.value().get<string>());
             }
         }
@@ -89,4 +104,27 @@ MTG::processData(const json &allSets, bool oracle) {
     return data;
 }
 
+void MTG::outputGraph(const MTG::DataVec &data, const string &outdir)
+{
+    FileOpen dataFile(+(outdir + "data.dat"), "w");
+    unsigned idx = 0;
+    for (auto &[bitsRaw, bitsCompressed, set] : data) {
+        const double ratio = double(bitsCompressed) / bitsRaw;
+        const char *setName = +(*set)["code"].get<string>();
+        fprintf(dataFile.get(), "%u %s %g\n", idx++, setName, ratio);
+    }
+
+    FileOpen gnuplotFile(+(outdir + "commands.gnuplot"), "w");
+    fprintf(gnuplotFile.get(), "set terminal pngcairo size 4096, 1024\n"
+            "set output '%sgraph.png'\n"
+            "set boxwidth 0.5\n"
+            "set style fill solid\n"
+            "stats '%sdata.dat' using 1:3 prefix 'A'\n"
+            "f(x)=A_slope*(x)+A_intercept\n"
+            "set yrange [.3:.5]\n"
+            "set label 1 at graph 0.1, graph 0.85 sprintf('r = %%4.2f', A_correlation) center offset 0, 1\n"
+            "plot '%sdata.dat' using 1:3:xtic(2) with boxes title 'Compression Ratio'"
+            ", f(x) title 'Linear Fit' lw 6\n",
+            +outdir, +outdir, +outdir);
+}
 
