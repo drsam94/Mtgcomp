@@ -1,68 +1,68 @@
 // (c) Sam Donow 2017
 #include "json.hpp"
-#include "LZW.h"
 #include "MagicProcessing.h"
+#include "util.h"
 #include <stdio.h>
+#include <unistd.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <array>
 using namespace std;
-
-
 using json = nlohmann::json;
+
+void dieUsage(char **argv)
+{
+    fprintf(stderr, "usage: %s [-O] [-p prefix] jsonFile", argv[0]);
+    exit(1);
+}
+
 int main (int argc, char **argv)
 {
-    if (argc < 2) {
-        printf("usage: %s data.json", argv[0]);
+    int opt;
+    bool useOracle = false;
+    string outdir;
+    while ((opt = getopt(argc, argv, "Op:")) != -1) {
+        switch(opt) {
+            case 'O':
+                useOracle = true;
+                break;
+            case 'p':
+                outdir = optarg;
+                break;
+            default:
+                dieUsage(argv);
+        }
     }
-    // Parse the set data
-    ifstream file(argv[1]);
+    if (optind >= argc) {
+        dieUsage(argv);
+    }
+    ifstream file(argv[optind]);
     string s(static_cast<stringstream const&>(stringstream() << file.rdbuf()).str());
     json allSets = json::parse(s);
 
-    vector<tuple<size_t, size_t, const json *>> data;
     // Compress the data, collated by set
-    for (auto it = allSets.begin(); it != allSets.end(); ++it) {
-        json &set = it.value();
-        string corpus;
-        for (const json &card : set["cards"]) {
-            // Vanilla creatures don't have text!
-            if (auto it = card.find("originalText"); it != card.end()) {
-                corpus += MTG::preprocess(it.value().get<string>());
-            }
-        }
-        if (corpus.empty()) {
-            continue;
-        }
-        size_t bitsCompressed;
-        auto compressed = Compress::compress<uint16_t>(corpus, MTG::alphabet, bitsCompressed);
-        const size_t bitsRaw = corpus.size() * 8;
-        data.push_back({bitsRaw, bitsCompressed, &set});
-    }
-    // sort by set release date
-    sort(data.begin(), data.end(), [](const auto &a, const auto &b)
-            {
-                auto getDate = [](decltype(a) tup) {
-                    const auto &[dummy1, dummy2, set] = tup;
-                    (void)dummy1, (void)dummy2;
-                    char buf[9];
-                    char *p = buf;
-                    for (char c : (*set)["releaseDate"].dump()) {
-                        if (c != '-' && c != '"') {
-                            *(p++) = c;
-                        }
-                    }
-                    *p = '\0';
-                    return atoi(buf);
-                };
-                return getDate(a) < getDate(b);
-            });
+    vector<tuple<size_t, size_t, const json *>> data = MTG::processData(allSets, useOracle);
+
+    FileOpen dataFile(+(outdir + "data.dat"), "w");
+    unsigned idx = 0;
     for (auto &[bitsRaw, bitsCompressed, set] : data) {
         const double ratio = double(bitsCompressed) / bitsRaw;
-
-        printf("%s: %lu -> %lu (%g%%)\n", (*set)["code"].get<string>().c_str(),
-                bitsRaw / 8, bitsCompressed / 8, ratio);
+        const char *setName = +(*set)["code"].get<string>();
+        fprintf(dataFile.get(), "%u %s %g\n", idx++, setName, ratio);
     }
+
+    FileOpen gnuplotFile(+(outdir + "commands.gnuplot"), "w");
+    fprintf(gnuplotFile.get(), "set terminal pngcairo size 4096, 1024\n"
+            "set output '%sgraph.png'\n"
+            "set boxwidth 0.5\n"
+            "set style fill solid\n"
+            "f(x) = a*x + b\n"
+            "fit f(x) '%sdata.dat' using 1:3 via a,b\n"
+            "stats '%sdata.dat' using (f($0)):2 prefix 'A'\n"
+            "set label 1 at graph 0.1, graph 0.85 sprintf('r = %%4.2f', A_correlation) center offset 0, 1\n"
+            "plot '%sdata.dat' using 1:3:xtic(2) with boxes title 'Compression Ratio'"
+            ", f(x) title 'Linear Fit' lw 6\n",
+            +outdir, +outdir, +outdir, +outdir);
     return 0;
 }

@@ -2,3 +2,5 @@
 data/AllSets-x.json
 data/AllSets-x.json.zip
 bin/*
+fit.log
+out/*
