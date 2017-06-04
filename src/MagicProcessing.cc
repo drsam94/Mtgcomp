@@ -2,7 +2,9 @@
 #include "MagicProcessing.h"
 #include "util.h"
 #include <stdio.h>
+#include <random>
 #include <algorithm>
+#include <experimental/algorithm>
 using namespace std;
 using json = nlohmann::json;
 
@@ -49,14 +51,26 @@ string MTG::preprocess(const string &s)
     return ret;
 }
 
-MTG::DataVec MTG::processData(const json &allSets, bool oracle, char color)
+MTG::DataVec MTG::processData(const json &allSets, bool oracle, char color, bool normalizeSizes)
 {
     MTG::DataVec data;
     for (auto it = allSets.begin(); it != allSets.end(); ++it) {
         const json &set = it.value();
         if (set["type"] != "core" && set["type"] != "expansion") continue;
         string corpus;
-        for (const json &card : set["cards"]) {
+        const json &cards = set["cards"];
+        json sampledCards = json::array();
+        const json *cardsToIterate = &cards;
+        if (normalizeSizes) {
+            std::mt19937 gen(0);
+            experimental::sample(begin(cards), end(cards), back_inserter(sampledCards),
+                    MTG::NormalizedSetSize, std::mt19937{0});
+            cardsToIterate = &sampledCards;
+        }
+        size_t n = 0;
+        for (const json &card : *cardsToIterate) {
+            if (normalizeSizes && n++ == MTG::NormalizedSetSize)
+                break;
             // Vanilla creatures don't have text!
             if (auto it = card.find(oracle ? "text" : "originalText"); it != card.end()) {
                 // Restrict to the chosen color is one is provided

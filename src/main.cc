@@ -21,9 +21,10 @@ int main (int argc, char **argv)
 {
     int opt;
     bool useOracle = false;
+    bool normalizeSizes = false;
     string outdir;
     char color = '\0';
-    while ((opt = getopt(argc, argv, "Op:c:")) != -1) {
+    while ((opt = getopt(argc, argv, "Onp:c:")) != -1) {
         switch (opt) {
             case 'O':
                 useOracle = true;
@@ -33,6 +34,9 @@ int main (int argc, char **argv)
                 break;
             case 'c':
                 color = optarg[0];
+                break;
+            case 'n':
+                normalizeSizes = true;
                 break;
             default:
                 dieUsage(argv);
@@ -46,7 +50,7 @@ int main (int argc, char **argv)
     json allSets = json::parse(s);
 
     // Compress the data, collated by set
-    auto data = MTG::processData(allSets, useOracle, color);
+    auto data = MTG::processData(allSets, useOracle, color, normalizeSizes);
     MTG::outputGraph(data, outdir);
     return 0;
 }
